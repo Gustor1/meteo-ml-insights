@@ -30,6 +30,7 @@ from src.forecasting import fit_linear_regression, fit_random_forest, naive_pers
 from src.insights import build_full_insights
 from src.loader import EXCLUDED_VARIABLES, detect_column_mapping, get_usable_mapping, load_weather_csv
 from src.monthly_forecasting import run_monthly_holt_winters_analysis
+from src.monthly_reporting import plot_monthly_holt_winters_forecast
 from src.reporting import (
     plot_annual_climate_summary,
     plot_monthly_climate_summary,
@@ -168,8 +169,7 @@ def format_monthly_forecasting_section(monthly_forecasting: dict) -> str:
     forecast = monthly_forecasting["future_forecast"]
     lines = [
         "## Prévision mensuelle Holt-Winters", "",
-        "La prévision mensuelle est distincte de la prévision quotidienne à J+1. "
-        "Elle projette les températures moyennes mensuelles à partir de la tendance et de la saisonnalité observées.", "",
+        "La prévision mensuelle est distincte de la prévision quotidienne à J+1. Elle projette les températures moyennes mensuelles à partir de la tendance et de la saisonnalité observées.", "",
         f"Période de test mensuelle : {monthly_forecasting['test_series'].index.min().strftime('%Y-%m')} à {monthly_forecasting['test_series'].index.max().strftime('%Y-%m')}.",
         "", "### Comparaison des modèles mensuels", "",
         "| Modèle | MAE (°C) | RMSE (°C) | Biais (°C) |", "|---|---:|---:|---:|",
@@ -191,13 +191,7 @@ def run_walk_forward_validation(model_data: pd.DataFrame, feature_columns: list[
         _, predictions["Régression linéaire"] = fit_linear_regression(train_data=train_data, test_data=test_data, feature_columns=feature_columns)
         _, predictions["Random Forest"] = fit_random_forest(train_data=train_data, test_data=test_data, feature_columns=feature_columns)
         for model_name, values in predictions.items():
-            rows.append({
-                "fenetre": fold_number,
-                "train_debut": train_data["date"].min(), "train_fin": train_data["date"].max(),
-                "test_debut": test_data["date"].min(), "test_fin": test_data["date"].max(),
-                "modele": model_name,
-                **calculate_regression_metrics(y_test, values),
-            })
+            rows.append({"fenetre": fold_number, "train_debut": train_data["date"].min(), "train_fin": train_data["date"].max(), "test_debut": test_data["date"].min(), "test_fin": test_data["date"].max(), "modele": model_name, **calculate_regression_metrics(y_test, values)})
     results = pd.DataFrame(rows)
     return results, summarize_walk_forward_results(results)
 
@@ -253,21 +247,10 @@ def run_full_analysis(filepath: str, test_size: float = 0.20, create_plots: bool
     print(seasonal_trends[["saison", "pente_par_decennie", "p_value", "r_squared", "significatif"]].to_string(index=False))
 
     print("\n=== 7. PRÉVISION MENSUELLE HOLT-WINTERS ===")
-    monthly_forecasting = run_monthly_holt_winters_analysis(
-        df,
-        test_months=36,
-        forecast_months=12,
-    )
+    monthly_forecasting = run_monthly_holt_winters_analysis(df, test_months=36, forecast_months=12)
     for model_name, metrics in monthly_forecasting["comparison_metrics"].items():
-        print(
-            f"{model_name:36s} | MAE : {metrics['mae']:.3f} °C | "
-            f"RMSE : {metrics['rmse']:.3f} °C | Biais : {metrics['bias']:+.3f} °C"
-        )
-    print(
-        "Projection mensuelle : "
-        f"{monthly_forecasting['future_forecast'].index.min().strftime('%Y-%m')} -> "
-        f"{monthly_forecasting['future_forecast'].index.max().strftime('%Y-%m')}"
-    )
+        print(f"{model_name:36s} | MAE : {metrics['mae']:.3f} °C | RMSE : {metrics['rmse']:.3f} °C | Biais : {metrics['bias']:+.3f} °C")
+    print("Projection mensuelle : " f"{monthly_forecasting['future_forecast'].index.min().strftime('%Y-%m')} -> " f"{monthly_forecasting['future_forecast'].index.max().strftime('%Y-%m')}")
 
     print("\n=== 8. PRÉPARATION DES DONNÉES J+1 ===")
     model_data = build_j1_temperature_dataset(df)
@@ -287,11 +270,7 @@ def run_full_analysis(filepath: str, test_size: float = 0.20, create_plots: bool
     naive_predictions = naive_persistence_forecast(test_data)
     forest_model, forest_predictions = fit_random_forest(train_data=train_data, test_data=test_data, feature_columns=available_features)
     _, linear_predictions = fit_linear_regression(train_data=train_data, test_data=test_data, feature_columns=available_features)
-    model_metrics = {
-        "Baseline naïve": calculate_regression_metrics(y_test, naive_predictions),
-        "Régression linéaire": calculate_regression_metrics(y_test, linear_predictions),
-        "Random Forest": calculate_regression_metrics(y_test, forest_predictions),
-    }
+    model_metrics = {"Baseline naïve": calculate_regression_metrics(y_test, naive_predictions), "Régression linéaire": calculate_regression_metrics(y_test, linear_predictions), "Random Forest": calculate_regression_metrics(y_test, forest_predictions)}
     for name, metrics in model_metrics.items():
         print(f"{name:22s} | MAE : {metrics['mae']:.3f} °C | RMSE : {metrics['rmse']:.3f} °C | Biais : {metrics['bias']:+.3f} °C")
 
@@ -310,11 +289,8 @@ def run_full_analysis(filepath: str, test_size: float = 0.20, create_plots: bool
         print("\n=== 13. GRAPHIQUES ===")
         plot_annual_climate_summary(annual_statistics, "outputs/climat_annuel.png")
         plot_monthly_climate_summary(monthly_statistics, "outputs/climatologie_mensuelle.png")
-        for prediction, name, output in [
-            (naive_predictions, "Baseline naïve", "outputs/predictions_baseline_naive.png"),
-            (linear_predictions, "Régression linéaire", "outputs/predictions_regression_lineaire.png"),
-            (forest_predictions, "Random Forest", "outputs/predictions_random_forest.png"),
-        ]:
+        plot_monthly_holt_winters_forecast(monthly_forecasting, "outputs/prevision_mensuelle_holt_winters.png")
+        for prediction, name, output in [(naive_predictions, "Baseline naïve", "outputs/predictions_baseline_naive.png"), (linear_predictions, "Régression linéaire", "outputs/predictions_regression_lineaire.png"), (forest_predictions, "Random Forest", "outputs/predictions_random_forest.png")]:
             plot_test_predictions(test_data=test_data, predictions=prediction, model_name=name, output_path=output)
 
     print("\n=== 14. RAPPORT AUTOMATIQUE ===")
@@ -326,7 +302,7 @@ def run_full_analysis(filepath: str, test_size: float = 0.20, create_plots: bool
         format_climate_section(daily_extremes, hottest_months, coldest_months, wettest_months, hottest_years, monthly_anomalies), "",
         format_climate_trends_section(annual_coverage, indicator_trends, seasonal_trends), "",
         format_monthly_forecasting_section(monthly_forecasting), "",
-        "## Graphiques climatiques générés", "", "- `outputs/climat_annuel.png`", "- `outputs/climatologie_mensuelle.png`", "",
+        "## Graphiques climatiques générés", "", "- `outputs/climat_annuel.png`", "- `outputs/climatologie_mensuelle.png`", "- `outputs/prevision_mensuelle_holt_winters.png`", "",
         format_metrics_section(model_metrics), "", format_importance_section(importance_df),
     ]
     if run_walk_forward:
@@ -335,20 +311,7 @@ def run_full_analysis(filepath: str, test_size: float = 0.20, create_plots: bool
 
     print("\n=== ANALYSE TERMINÉE ===")
     print("Consulte le dossier outputs/ pour les graphiques et le rapport Markdown.")
-    return {
-        "source_filename": source_path.name, "quality_report": quality_report, "trend": trend, "trend_text": trend_text,
-        "mapping": mapping, "usable_mapping": usable_mapping, "daily_extremes": daily_extremes,
-        "monthly_statistics": monthly_statistics, "annual_statistics": annual_statistics, "monthly_anomalies": monthly_anomalies,
-        "hottest_months": hottest_months, "coldest_months": coldest_months, "wettest_months": wettest_months, "hottest_years": hottest_years,
-        "annual_coverage": annual_coverage, "annual_indicators": annual_indicators, "indicator_trends": indicator_trends,
-        "seasonal_statistics": seasonal_statistics, "seasonal_trends": seasonal_trends,
-        "monthly_forecasting": monthly_forecasting,
-        "model_metrics": model_metrics, "importance_df": importance_df,
-        "walk_forward_results": walk_forward_results, "walk_forward_summary": walk_forward_summary,
-        "train_start": train_data["date"].min(), "train_end": train_data["date"].max(),
-        "test_start": test_data["date"].min(), "test_end": test_data["date"].max(),
-        "train_size": len(train_data), "test_size": len(test_data),
-    }
+    return {"source_filename": source_path.name, "quality_report": quality_report, "trend": trend, "trend_text": trend_text, "mapping": mapping, "usable_mapping": usable_mapping, "daily_extremes": daily_extremes, "monthly_statistics": monthly_statistics, "annual_statistics": annual_statistics, "monthly_anomalies": monthly_anomalies, "hottest_months": hottest_months, "coldest_months": coldest_months, "wettest_months": wettest_months, "hottest_years": hottest_years, "annual_coverage": annual_coverage, "annual_indicators": annual_indicators, "indicator_trends": indicator_trends, "seasonal_statistics": seasonal_statistics, "seasonal_trends": seasonal_trends, "monthly_forecasting": monthly_forecasting, "model_metrics": model_metrics, "importance_df": importance_df, "walk_forward_results": walk_forward_results, "walk_forward_summary": walk_forward_summary, "train_start": train_data["date"].min(), "train_end": train_data["date"].max(), "test_start": test_data["date"].min(), "test_end": test_data["date"].max(), "train_size": len(train_data), "test_size": len(test_data)}
 
 
 def main() -> None:
