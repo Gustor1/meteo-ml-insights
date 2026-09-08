@@ -1,0 +1,43 @@
+# Données météo locales et sensibles
+data/raw/
+data/processed/
+*.csv
+*.xlsx
+*.xls
+*.xlsb
+
+# Résultats, graphiques et rapports générés localement
+outputs/
+models/
+
+# Environnement Python et fichiers compilés
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Tests et outils Python
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Configuration locale et secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Éditeurs et système
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Journaux temporaires
+*.log
